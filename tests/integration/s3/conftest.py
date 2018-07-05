@@ -9,25 +9,29 @@ from arctic.s3._kv_ndarray_store import KeyValueNdarrayStore
 from arctic.s3._pandas_ndarray_store import PandasDataFrameStore, PandasSeriesStore, PandasPanelStore
 
 
+@pytest.fixture
+def s3_mock():
+    with mock_s3():
+        yield
+
+
 @pytest.fixture()
 def s3_bucket():
     return 'arctic2'
 
 
 @pytest.fixture()
-def s3_client():
+def s3_client(s3_mock):
     return boto3.client('s3')
 
 
 @pytest.fixture()
 def s3_store(s3_bucket, s3_client):
-    with mock_s3():
-        s3_client.create_bucket(Bucket=s3_bucket)
-        s3_client.put_bucket_versioning(Bucket=s3_bucket,
-                                        VersioningConfiguration={'MFADelete': 'Disabled',
-                                                                 'Status': 'Enabled'})
-        store = S3KeyValueStore(bucket=s3_bucket)
-        yield store
+    s3_client.create_bucket(Bucket=s3_bucket)
+    s3_client.put_bucket_versioning(Bucket=s3_bucket,
+                                    VersioningConfiguration={'MFADelete': 'Disabled',
+                                                             'Status': 'Enabled'})
+    return S3KeyValueStore(bucket=s3_bucket)
 
 
 @pytest.fixture()
