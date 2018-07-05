@@ -28,6 +28,7 @@ install:
   - pip install pytest-timeout --upgrade
   - pip install pytest-xdist --upgrade
   - pip install setuptools-git --upgrade
+  - pip install boto3 --upgrade
 script:
   - pip freeze
   - python setup.py test --pytest-args=-v
