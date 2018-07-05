@@ -30,6 +30,7 @@ install:
   - pip install setuptools-git --upgrade
   - pip install boto3 --upgrade
   - pip install requests --upgrade
+  - pip install cookies --upgrade
   - pip install responses --upgrade
   - pip install moto --upgrade
 script:
