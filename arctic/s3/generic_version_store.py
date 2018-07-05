@@ -139,36 +139,31 @@ class GenericVersionStore(object):
             handler = self._bson_handler
         return handler
 
-    def read(self, symbol, as_of=None, date_range=None, from_version=None, allow_secondary=None, **kwargs):
+    def read(self, symbol, as_of=None, version_id=None, snapshot_id=None, date_range=None, **kwargs):
         """
         Read data for the named symbol.  Returns a VersionedItem object with
-        a data and metdata element (as passed into write).
+        a data and metadata element (as passed into write).
 
         Parameters
         ----------
         symbol : `str`
             symbol name for the item
-        as_of : `str` or `int` or `datetime.datetime`
-            Return the data as it was as_of the point in time.
-            `int` : specific version number
-            `str` : snapshot name which contains the version
-            `datetime.datetime` : the version of the data that existed as_of the requested point in time
+        as_of : `datetime.datetime`
+            Return the data as it was as_of at that point in time.
+        version_id : `str`
+            Return the specific version
+        snapshot_id : `str`
+            Return the specific version contained in the referenced snapshot
         date_range: `arctic.date.DateRange`
             DateRange to read data for.  Applies to Pandas data, with a DateTime index
             returns only the part of the data that falls in the DateRange.
-        allow_secondary : `bool` or `None`
-            Override the default behavior for allowing reads from secondary members of a cluster:
-            `None` : use the settings from the top-level `Arctic` object used to query this version store.
-            `True` : allow reads from secondary members
-            `False` : only allow reads from primary members
 
         Returns
         -------
         VersionedItem namedtuple which contains a .data and .metadata element
         """
-        _version = self._backing_store.read_version(self.library_name, symbol, as_of)
-        return self._do_read(symbol, _version, from_version,
-                             date_range=date_range, **kwargs)
+        _version = self._backing_store.read_version(self.library_name, symbol, as_of, version_id, snapshot_id)
+        return self._do_read(symbol, _version, date_range=date_range, **kwargs)
 
     def get_info(self, symbol, as_of=None):
         """
@@ -228,14 +223,32 @@ class GenericVersionStore(object):
 
     def _insert_version(self, version):
         try:
-            # Keep here the mongo_retry to avoid incrementing versions and polluting the DB with garbage segments,
-            # upon intermittent Mongo errors
-            # If, however, we get a DuplicateKeyError, suppress it and raise OperationFailure, so that the method-scoped
-            # mongo_retry re-tries and creates a new version, to overcome the issue.
             self._backing_store.write_version(self.library_name, version['symbol'], version)
         except DuplicateKeyError as err:
             logger.exception(err)
             raise OperationFailure("A version with the same _id exists, force a clean retry")
+
+
+    def append(self, symbol, data, metadata=None, prune_previous_version=True, upsert=True, **kwargs):
+        """
+        Append 'data' under the specified 'symbol' name to this library.
+        The exact meaning of 'append' is left up to the underlying store implementation.
+
+        Parameters
+        ----------
+        symbol : `str`
+            symbol name for the item
+        data :
+            to be persisted
+        metadata : `dict`
+            an optional dictionary of metadata to persist along with the symbol.
+        prune_previous_version : `bool`
+            Removes previous (non-snapshotted) versions from the database.
+            Default: True
+        upsert : `bool`
+            Write 'data' if no previous version exists.
+        """
+        pass
 
     def write(self, symbol, data, metadata=None, prune_previous_version=True, **kwargs):
         """
@@ -262,7 +275,7 @@ class GenericVersionStore(object):
         of the written symbol in the store.
         """
         _id = bson.ObjectId()
-        version = {'_id': _id, 'symbol': symbol, 'metadata': metadata, 'version': _id}
+        version = {'_id': _id, 'symbol': symbol, 'metadata': metadata}
 
         previous_version = self._backing_store.read_version(self.library_name, symbol)
 

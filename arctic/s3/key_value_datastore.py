@@ -49,6 +49,8 @@ class DictBackedKeyValueStore(object):
 
 
 
+
+
 class S3KeyValueStore(object):
     # TODO should KV Stores be responsible for ID creation?
 
@@ -61,11 +63,12 @@ class S3KeyValueStore(object):
     def write_version(self, library_name, symbol, version_doc):
         version_path = self._make_version_path(library_name, symbol)
         encoded_version_doc = BSON.encode(version_doc)
-        self.client.put_object(Body=encoded_version_doc, Bucket=self.bucket, Key=version_path)
+        put_result = self.client.put_object(Body=encoded_version_doc, Bucket=self.bucket, Key=version_path)
+        version_doc['version'] = put_result['VersionId']
 
     def list_versions(self, library_name, symbol):
         version_path = self._make_version_path(library_name, symbol)
-        # TODO handle prefix issue and truncated responses
+        # TODO handle prefix issue and truncated responses, handle deletions
         version = self.client.list_object_versions(Bucket=self.bucket, Prefix=version_path)
         # TODO decide appropriate generic response format
         return pd.DataFrame(version['Versions'])
@@ -79,14 +82,18 @@ class S3KeyValueStore(object):
         # TODO handle deletions, snapshots etc.
         return [p['Prefix'].replace(base_symbols_path, '').replace('/', '') for p in objects['CommonPrefixes']]
 
-    def read_version(self, library_name, symbol, as_of=None):
-        #TODO handle as_of
+    def read_version(self, library_name, symbol, as_of=None, version_id=None, snapshot_id=None):
         version_path = self._make_version_path(library_name, symbol)
+        get_object_args = dict(Bucket=self.bucket, Key=version_path)
+        if any([as_of, version_id, snapshot_id]):
+            get_object_args['VersionId'] = self._find_version(library_name, symbol, as_of, version_id, snapshot_id)
         try:
-            encoded_version_doc = self.client.get_object(Bucket=self.bucket, Key=version_path)
+            encoded_version_doc = self.client.get_object(**get_object_args)
         except self.client.exceptions.NoSuchKey:
             return None
-        return BSON.decode(encoded_version_doc['Body'].read())
+        version_doc = BSON.decode(encoded_version_doc['Body'].read())
+        version_doc['version'] = encoded_version_doc['VersionId']
+        return version_doc
 
     def write_segment(self, library_name, symbol, segment_data, previous_segment_keys=set()):
         segment_hash = checksum(symbol, segment_data)
@@ -101,6 +108,28 @@ class S3KeyValueStore(object):
     def read_segments(self, library_name, segment_keys):
         for k in segment_keys:
             yield self.client.get_object(Bucket=self.bucket, Key=k)['Body'].read()
+
+    def _find_version(self, library_name, symbol, as_of, version_id, snapshot_id):
+        if sum(v is not None for v in [as_of, version_id, snapshot_id]) > 1:
+            raise ValueError('Only one of as_of, version_id, snapshot_id should be specified')
+
+        if version_id:
+            return version_id
+        elif as_of:
+            # getting all versions will get slow with many versions - look into filtering in S3 using as_of date
+            versions = self.list_versions(library_name, symbol)
+            # TODO handle deletions
+            valid_versions = versions.loc[versions['LastModified'] <= as_of, 'VersionId']
+            if len(valid_versions) == 0:
+                raise KeyError('No versions found for as_of {} for symbol: {}, library {}'.format(as_of,
+                                                                                                  symbol,
+                                                                                                  library_name))
+            else:
+                return valid_versions.iloc[-1]
+        elif snapshot_id:
+            raise NotImplementedError('Snapshot functionality not implemented yet')
+        else:
+            raise ValueError('One of as_of, version_id, snapshot_id should be specified')
 
     def _make_base_symbols_path(self, library_name):
         return '{}/symbols/'.format(library_name)
