@@ -91,7 +91,7 @@ class S3KeyValueStore(object):
             encoded_version_doc = self.client.get_object(**get_object_args)
         except self.client.exceptions.NoSuchKey:
             return None
-        version_doc = BSON.decode(encoded_version_doc['Body'].read())
+        version_doc = BSON(encoded_version_doc['Body'].read()).decode()
         version_doc['version'] = encoded_version_doc['VersionId']
         return version_doc
 
