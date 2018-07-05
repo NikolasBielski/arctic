@@ -70,6 +70,15 @@ class S3KeyValueStore(object):
         # TODO decide appropriate generic response format
         return pd.DataFrame(version['Versions'])
 
+    def list_symbols(self, library_name):
+        base_symbols_path = self._make_base_symbols_path(library_name)
+        # TODO handle prefix issue and truncated responses
+        # https://boto3.readthedocs.io/en/latest/guide/paginators.html
+        objects = self.client.list_objects_v2(Bucket=self.bucket, Delimiter='/', Prefix=base_symbols_path)
+        # get common prefixes
+        # TODO handle deletions, snapshots etc.
+        return [p['Prefix'].replace(base_symbols_path, '').replace('/', '') for p in objects['CommonPrefixes']]
+
     def read_version(self, library_name, symbol, as_of=None):
         #TODO handle as_of
         version_path = self._make_version_path(library_name, symbol)
@@ -92,6 +101,9 @@ class S3KeyValueStore(object):
     def read_segments(self, library_name, segment_keys):
         for k in segment_keys:
             yield self.client.get_object(Bucket=self.bucket, Key=k)['Body'].read()
+
+    def _make_base_symbols_path(self, library_name):
+        return '{}/symbols/'.format(library_name)
 
     def _make_version_path(self, library_name, symbol):
         return '{}/symbols/{}/version_doc/version_doc.bson'.format(library_name, symbol)

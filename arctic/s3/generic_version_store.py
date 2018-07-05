@@ -30,36 +30,16 @@ class GenericVersionStore(object):
 
     _bson_handler = PickleStore()
 
-
     def __init__(self, library_name, backing_store):
         self.library_name = library_name
         self._backing_store = backing_store
 
-
-    def _reset(self):
-        # The default collections
-        self._collection = self._arctic_lib.get_top_level_collection()
-        self._audit = self._collection.audit
-        self._snapshots = self._collection.snapshots
-        self._versions = self._collection.versions
-        self._version_nums = self._collection.version_nums
-        self._publish_changes = '%s.changes' % self._collection.name in self._collection.database.collection_names()
-        if self._publish_changes:
-            self._changes = self._collection.changes
-
-    def __getstate__(self):
-        return {'arctic_lib': self._arctic_lib}
-
-    def __setstate__(self, state):
-        return VersionStore.__init__(self, state['arctic_lib'])
-
     def __str__(self):
         return """<%s at %s>
-%s""" % (self.__class__.__name__, hex(id(self)), indent(str(self._arctic_lib), 4))
+%s""" % (self.__class__.__name__, hex(id(self)), indent(str(self.library_name), 4))
 
     def __repr__(self):
         return str(self)
-
 
     def list_symbols(self, all_symbols=False, snapshot=None, regex=None, **kwargs):
         """
@@ -82,7 +62,7 @@ class GenericVersionStore(object):
         -------
         String list of symbols in the library
         """
-        pass
+        return self._backing_store.list_symbols(self.library_name)
 
     def has_symbol(self, symbol, as_of=None):
         """
@@ -102,7 +82,6 @@ class GenericVersionStore(object):
             `datetime.datetime` : the version of the data that existed as_of the requested point in time
         """
         try:
-            # Always use the primary for has_symbol, it's safer
             version = self._backing_store.read_version(self.library_name, symbol, as_of)
         except NoDataFoundException:
             version = None

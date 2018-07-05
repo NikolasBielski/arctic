@@ -46,3 +46,13 @@ def test_save_read_segments(s3_bucket, s3_client, s3_store):
     segment_key = s3_store.write_segment(library_name='my_library', symbol='symbol', segment_data=segment_data)
     loaded_segment_data = list(s3_store.read_segments(library_name='my_library', segment_keys=[segment_key]))[0]
     assert segment_data == loaded_segment_data
+
+
+@mock_s3
+def test_list_symbols(s3_bucket, s3_client, s3_store):
+    s3_client.create_bucket(Bucket=s3_bucket)
+    version_doc = {'symbol': 24, 'foo': 'bar'}
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
+    s3_store.write_version(library_name='my_library', symbol='my_symbol2', version_doc=version_doc)
+    symbols = s3_store.list_symbols(library_name='my_library')
+    assert ['my_symbol', 'my_symbol2'] == symbols

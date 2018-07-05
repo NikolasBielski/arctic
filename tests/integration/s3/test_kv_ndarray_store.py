@@ -89,6 +89,8 @@ def test_save_and_resave_reuses_chunks(s3_client, s3_bucket, s3_store, generic_v
         # Key should now have two versions
         versions = s3_store.list_versions(library_name, 'MYARR')
         assert len(versions) == 2
+        # only one symbol though
+        assert generic_version_store.list_symbols() == ['MYARR']
 
         # Should contain the more chunks, but not double the number
         # of chunks
