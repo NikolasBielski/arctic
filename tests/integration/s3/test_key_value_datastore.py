@@ -1,3 +1,4 @@
+from pytest import fail
 
 
 def test_save_read_version_doc(s3_store):
@@ -45,3 +46,54 @@ def test_list_versions(s3_store):
     s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
     versions = s3_store.list_versions(library_name='my_library', symbol='my_symbol')
     assert len(versions) == 2
+
+
+def test_list_all_versions(s3_store):
+    version_doc = {'symbol': 24, 'foo': 'bar'}
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
+    s3_store.write_version(library_name='my_library', symbol='my_symbol2', version_doc=version_doc)
+    versions = s3_store._list_all_versions(library_name='my_library')
+    assert len(versions) == 2
+
+
+def test_create_and_read_snapshot(s3_store):
+    version_doc = {'symbol': 24, 'foo': 'bar'}
+    latest_versions = {}
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
+    latest_versions['my_symbol'] = version_doc['version']
+    s3_store.write_version(library_name='my_library', symbol='my_symbol2', version_doc=version_doc)
+    latest_versions['my_symbol2'] = version_doc['version']
+    s3_store.write_version(library_name='my_library', symbol='my_symbol3', version_doc=version_doc)
+    metadata = {'month': 'June'}
+    s3_store.snapshot(library_name='my_library', snap_name='snap1', metadata=metadata, skip_symbols=['my_symbol3'])
+    snap = s3_store._read_snapshot(library_name='my_library', snap_name='snap1')
+    assert snap['versions'] == latest_versions
+    assert snap['metadata'] == metadata
+
+
+def test_reading_from_snapshot(s3_store):
+    my_symbol_version_doc_0 = {'symbol': 24, 'data': 1}
+    my_symbol_version_doc_1 = {'symbol': 24, 'data': 2}
+    my_symbol2_version_doc_0 = {'symbol': 24, 'data': 999}
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=my_symbol_version_doc_0)
+    s3_store.snapshot(library_name='my_library', snap_name='snap0')
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=my_symbol_version_doc_1)
+    s3_store.snapshot(library_name='my_library', snap_name='snap1')
+    s3_store.write_version(library_name='my_library', symbol='my_symbol2', version_doc=my_symbol2_version_doc_0)
+    s3_store.snapshot(library_name='my_library', snap_name='snap2')
+
+    assert my_symbol_version_doc_0 == s3_store.read_version(library_name='my_library',
+                                                            symbol='my_symbol', snapshot_id='snap0')
+    assert my_symbol_version_doc_1 == s3_store.read_version(library_name='my_library',
+                                                            symbol='my_symbol', snapshot_id='snap1')
+    assert my_symbol2_version_doc_0 == s3_store.read_version(library_name='my_library',
+                                                             symbol='my_symbol2', snapshot_id='snap2')
+    try:
+        s3_store.read_version(library_name='my_library', symbol='my_symbol2', snapshot_id='snap0')
+        fail("Should not find symbol")
+    except KeyError:
+        pass
+
+

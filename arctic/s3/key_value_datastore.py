@@ -52,6 +52,15 @@ class DictBackedKeyValueStore(object):
 
 
 class S3KeyValueStore(object):
+    """S3 Store for use with GenericVersionStore.
+
+    Uses object key format:
+
+    /{library_name}/symbols/{symbol}.bson - version documents
+    /{library_name}/segments/{symbol}/{segment_hash} - segment documents
+    /{library_name}/snapshots/{snapname}.bson - snapshot documents
+
+    """
     # TODO should KV Stores be responsible for ID creation?
 
     def __init__(self, bucket, chunk_size=_CHUNK_SIZE):
@@ -68,19 +77,22 @@ class S3KeyValueStore(object):
 
     def list_versions(self, library_name, symbol):
         version_path = self._make_version_path(library_name, symbol)
-        # TODO handle prefix issue and truncated responses, handle deletions
-        version = self.client.list_object_versions(Bucket=self.bucket, Prefix=version_path)
+        # TODO handle deletions
+        paginator = self.client.get_paginator("list_object_versions")
+        results = []
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=version_path):
+            results.append(pd.DataFrame(page['Versions']))
         # TODO decide appropriate generic response format
-        return pd.DataFrame(version['Versions'])
+        return pd.concat(results)
 
     def list_symbols(self, library_name):
         base_symbols_path = self._make_base_symbols_path(library_name)
-        # TODO handle prefix issue and truncated responses
-        # https://boto3.readthedocs.io/en/latest/guide/paginators.html
-        objects = self.client.list_objects_v2(Bucket=self.bucket, Delimiter='/', Prefix=base_symbols_path)
-        # get common prefixes
         # TODO handle deletions, snapshots etc.
-        return [p['Prefix'].replace(base_symbols_path, '').replace('/', '') for p in objects['CommonPrefixes']]
+        results = []
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Delimiter='/', Prefix=base_symbols_path):
+            results.extend((self._extract_symbol_from_path(base_symbols_path, p['Key']) for p in page['Contents']))
+        return results
 
     def read_version(self, library_name, symbol, as_of=None, version_id=None, snapshot_id=None):
         version_path = self._make_version_path(library_name, symbol)
@@ -109,6 +121,41 @@ class S3KeyValueStore(object):
         for k in segment_keys:
             yield self.client.get_object(Bucket=self.bucket, Key=k)['Body'].read()
 
+    def snapshot(self, library_name, snap_name, metadata=None, skip_symbols=None, versions=None):
+        snapshot_path = self._make_snaphot_path(library_name, snap_name)
+        symbols_path = self._make_base_symbols_path(library_name)
+        latest_versions_df = self._list_all_versions(library_name)
+
+        symbols = latest_versions_df.loc[:, 'Key'].apply(lambda x: self._extract_symbol_from_path(symbols_path, x))
+        latest_versions = latest_versions_df.set_index(symbols).loc[:, 'VersionId']
+        if skip_symbols:
+            latest_versions = latest_versions.drop(labels=skip_symbols, errors='ignore')
+        key_version_mapping = latest_versions.to_dict()
+        if versions:
+            key_version_mapping.update(versions)
+
+        snapshot_dict = {'versions': key_version_mapping, 'metadata': metadata or {}}
+        encoded_snap = BSON.encode(snapshot_dict)
+        self.client.put_object(Body=encoded_snap, Bucket=self.bucket, Key=snapshot_path)
+
+    def _read_snapshot(self, library_name, snap_name):
+        snapshot_path = self._make_snaphot_path(library_name, snap_name)
+        get_object_args = dict(Bucket=self.bucket, Key=snapshot_path)
+        encoded_snapshot = self.client.get_object(**get_object_args)
+        snapshot = BSON(encoded_snapshot['Body'].read()).decode()
+        return snapshot
+
+    def _list_all_versions(self, library_name):
+        symbols_path = self._make_base_symbols_path(library_name)
+        results = []
+
+        paginator = self.client.get_paginator("list_object_versions")
+        version_iterator = paginator.paginate(Bucket=self.bucket, Prefix=symbols_path)
+        filtered_iterator = version_iterator.search("Versions[?IsLatest][]")
+        results.extend(filtered_iterator)
+        # TODO decide appropriate generic response format
+        return pd.DataFrame(results)
+
     def _find_version(self, library_name, symbol, as_of, version_id, snapshot_id):
         if sum(v is not None for v in [as_of, version_id, snapshot_id]) > 1:
             raise ValueError('Only one of as_of, version_id, snapshot_id should be specified')
@@ -127,7 +174,7 @@ class S3KeyValueStore(object):
             else:
                 return valid_versions.iloc[-1]
         elif snapshot_id:
-            raise NotImplementedError('Snapshot functionality not implemented yet')
+            return self._read_snapshot(library_name, snapshot_id)['versions'][symbol]
         else:
             raise ValueError('One of as_of, version_id, snapshot_id should be specified')
 
@@ -135,10 +182,17 @@ class S3KeyValueStore(object):
         return '{}/symbols/'.format(library_name)
 
     def _make_version_path(self, library_name, symbol):
-        return '{}/symbols/{}/version_doc/version_doc.bson'.format(library_name, symbol)
+        return '{}/symbols/{}.bson'.format(library_name, symbol)
+
+    def _extract_symbol_from_path(self, base_symbols_path, symbol_path):
+        return symbol_path.replace(base_symbols_path, '').replace('/', '').replace('.bson', '')
 
     def _make_segment_path(self, library_name, symbol, segment_hash):
-        return '{}/symbols/{}/segments/{}'.format(library_name, symbol, segment_hash)
+        return '{}/segments/{}/{}'.format(library_name, symbol, segment_hash)
+
+    def _make_snaphot_path(self, library_name, snapshot_name):
+        return '{}/snapshots/{}.bson'.format(library_name, snapshot_name)
+
 
 def checksum(symbol, data):
     sha = hashlib.sha1()

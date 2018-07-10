@@ -377,7 +377,7 @@ class GenericVersionStore(object):
         versions: `dict`
             an optional dictionary of versions of the symbols to be snapshot
         """
-        pass
+        self._backing_store.snapshot(self.library_name, snap_name, metadata=None, skip_symbols=None, versions=None)
 
 
     def delete_snapshot(self, snap_name):
