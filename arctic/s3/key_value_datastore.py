@@ -48,8 +48,13 @@ class DictBackedKeyValueStore(object):
         return (self.store[k] for k in segment_keys)
 
 
-
-
+def _check_bucket(client, bucket_name):
+    response = client.get_bucket_versioning(Bucket=bucket_name)
+    if 'Status' in response and response['Status'] == 'Enabled':
+        return
+    else:
+        raise ValueError("Bucket {} is not setup correctly."
+                         " Does it exist and is versioning enabled?".format(bucket_name))
 
 class S3KeyValueStore(object):
     """S3 Store for use with GenericVersionStore.
@@ -77,7 +82,6 @@ class S3KeyValueStore(object):
 
     def list_versions(self, library_name, symbol):
         version_path = self._make_version_path(library_name, symbol)
-        # TODO handle deletions
         paginator = self.client.get_paginator("list_object_versions")
         results = []
         for page in paginator.paginate(Bucket=self.bucket, Prefix=version_path):
@@ -87,7 +91,7 @@ class S3KeyValueStore(object):
 
     def list_symbols(self, library_name):
         base_symbols_path = self._make_base_symbols_path(library_name)
-        # TODO handle deletions, snapshots etc.
+        # TODO handle snapshots etc.
         results = []
         paginator = self.client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self.bucket, Delimiter='/', Prefix=base_symbols_path):
@@ -160,7 +164,6 @@ class S3KeyValueStore(object):
 
     def list_snapshots(self, library_name):
         base_snaphot_path = self._make_base_snaphot_path(library_name)
-        # TODO handle deletions, snapshots etc.
         results = []
         paginator = self.client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=self.bucket, Delimiter='/', Prefix=base_snaphot_path):
@@ -187,7 +190,6 @@ class S3KeyValueStore(object):
         elif as_of:
             # getting all versions will get slow with many versions - look into filtering in S3 using as_of date
             versions = self.list_versions(library_name, symbol)
-            # TODO handle deletions
             valid_versions = versions.loc[versions['LastModified'] <= as_of, 'VersionId']
             if len(valid_versions) == 0:
                 raise KeyError('No versions found for as_of {} for symbol: {}, library {}'.format(as_of,
