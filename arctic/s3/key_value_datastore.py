@@ -94,6 +94,19 @@ class S3KeyValueStore(object):
             results.extend((self._extract_symbol_from_path(base_symbols_path, p['Key']) for p in page['Contents']))
         return results
 
+    def delete_symbol(self, library_name, symbol):
+        """Soft deletes a symbol - no data is removed, snapshots still work.
+
+        Other cleanup jobs needed to reclaim the storage.
+        """
+        version_path = self._make_version_path(library_name, symbol)
+        self.client.delete_object(Bucket=self.bucket, Key=version_path)
+
+    def delete_snapshot(self, library_name, snap_name):
+        """Soft deletes a snapshot. Versions in the snapshot are unaffected"""
+        snapshot_path = self._make_snaphot_path(library_name, snap_name)
+        self.client.delete_object(Bucket=self.bucket, Key=snapshot_path)
+
     def read_version(self, library_name, symbol, as_of=None, version_id=None, snapshot_id=None):
         version_path = self._make_version_path(library_name, symbol)
         get_object_args = dict(Bucket=self.bucket, Key=version_path)
@@ -145,6 +158,15 @@ class S3KeyValueStore(object):
         snapshot = BSON(encoded_snapshot['Body'].read()).decode()
         return snapshot
 
+    def list_snapshots(self, library_name):
+        base_snaphot_path = self._make_base_snaphot_path(library_name)
+        # TODO handle deletions, snapshots etc.
+        results = []
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Delimiter='/', Prefix=base_snaphot_path):
+            results.extend((self._extract_symbol_from_path(base_snaphot_path, p['Key']) for p in page['Contents']))
+        return results
+
     def _list_all_versions(self, library_name):
         symbols_path = self._make_base_symbols_path(library_name)
         results = []
@@ -192,6 +214,9 @@ class S3KeyValueStore(object):
 
     def _make_snaphot_path(self, library_name, snapshot_name):
         return '{}/snapshots/{}.bson'.format(library_name, snapshot_name)
+
+    def _make_base_snaphot_path(self, library_name):
+        return '{}/snapshots/'.format(library_name)
 
 
 def checksum(symbol, data):

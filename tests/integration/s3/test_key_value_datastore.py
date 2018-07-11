@@ -40,6 +40,15 @@ def test_list_symbols(s3_store):
     assert ['my_symbol', 'my_symbol2'] == symbols
 
 
+def test_delete_symbol(s3_store):
+    version_doc = {'symbol': 24, 'foo': 'bar'}
+    s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
+    s3_store.write_version(library_name='my_library', symbol='my_symbol2', version_doc=version_doc)
+    assert ['my_symbol', 'my_symbol2'] == s3_store.list_symbols(library_name='my_library')
+    s3_store.delete_symbol(library_name='my_library', symbol='my_symbol')
+    assert ['my_symbol2'] == s3_store.list_symbols(library_name='my_library')
+
+
 def test_list_versions(s3_store):
     version_doc = {'symbol': 24, 'foo': 'bar'}
     s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=version_doc)
@@ -74,9 +83,9 @@ def test_create_and_read_snapshot(s3_store):
 
 
 def test_reading_from_snapshot(s3_store):
-    my_symbol_version_doc_0 = {'symbol': 24, 'data': 1}
-    my_symbol_version_doc_1 = {'symbol': 24, 'data': 2}
-    my_symbol2_version_doc_0 = {'symbol': 24, 'data': 999}
+    my_symbol_version_doc_0 = {'foo': 24, 'data': 1}
+    my_symbol_version_doc_1 = {'foo': 24, 'data': 2}
+    my_symbol2_version_doc_0 = {'foo': 24, 'data': 999}
     s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=my_symbol_version_doc_0)
     s3_store.snapshot(library_name='my_library', snap_name='snap0')
     s3_store.write_version(library_name='my_library', symbol='my_symbol', version_doc=my_symbol_version_doc_1)
@@ -90,10 +99,19 @@ def test_reading_from_snapshot(s3_store):
                                                             symbol='my_symbol', snapshot_id='snap1')
     assert my_symbol2_version_doc_0 == s3_store.read_version(library_name='my_library',
                                                              symbol='my_symbol2', snapshot_id='snap2')
+
     try:
         s3_store.read_version(library_name='my_library', symbol='my_symbol2', snapshot_id='snap0')
         fail("Should not find symbol")
     except KeyError:
         pass
 
+    # can delete a snapshot
+    assert set(s3_store.list_snapshots(library_name='my_library')) == {'snap0', 'snap1', 'snap2'}
+    s3_store.delete_snapshot('my_library', 'snap0')
+    assert set(s3_store.list_snapshots(library_name='my_library')) == {'snap1', 'snap2'}
 
+    # should be able to read a deleted symbol from a snap after deleting the symbol
+    s3_store.delete_symbol(library_name='my_library', symbol='my_symbol2')
+    assert my_symbol2_version_doc_0 == s3_store.read_version(library_name='my_library',
+                                                             symbol='my_symbol2', snapshot_id='snap2')

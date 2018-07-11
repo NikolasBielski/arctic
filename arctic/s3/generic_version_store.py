@@ -96,7 +96,7 @@ class GenericVersionStore(object):
         symbol : `str`
             symbol name for the item
         """
-        pass
+        raise NotImplementedError()
 
     def list_versions(self, symbol=None, snapshot=None, latest_only=False):
         """
@@ -116,7 +116,7 @@ class GenericVersionStore(object):
         -------
         List of dictionaries describing the discovered versions in the library
         """
-        pass
+        raise NotImplementedError()
 
     def _read_handler(self, version, symbol):
         handler = None
@@ -248,7 +248,7 @@ class GenericVersionStore(object):
         upsert : `bool`
             Write 'data' if no previous version exists.
         """
-        pass
+        raise NotImplementedError()
 
     def write(self, symbol, data, metadata=None, prune_previous_version=True, **kwargs):
         """
@@ -321,7 +321,7 @@ class GenericVersionStore(object):
         `VersionedItem`
             VersionedItem named tuple containing the metadata of the written symbol's version document in the store.
         """
-        pass
+        raise NotImplementedError()
 
     def restore_version(self, symbol, as_of, prune_previous_version=True):
         """
@@ -348,7 +348,7 @@ class GenericVersionStore(object):
             VersionedItem named tuple containing the metadata of the written symbol's version document in the store.
         """
         # if version/snapshot/data supplied in "as_of" does not exist, will fail fast with NoDataFoundException
-        pass
+        raise NotImplementedError()
 
     def delete(self, symbol):
         """
@@ -360,7 +360,7 @@ class GenericVersionStore(object):
         symbol : `str`
             symbol name to delete
         """
-        pass
+        raise self._backing_store.delete_symbol(self.library_name, symbol)
 
     def snapshot(self, snap_name, metadata=None, skip_symbols=None, versions=None):
         """
@@ -389,7 +389,7 @@ class GenericVersionStore(object):
         symbol : `str`
             The snapshot name to delete
         """
-        pass
+        self._backing_store.delete_snapshot(self.library_name, snap_name)
 
 
     def list_snapshots(self):
@@ -400,7 +400,7 @@ class GenericVersionStore(object):
         -------
         string list of snapshot names
         """
-        pass
+        raise self._backing_store.list_snapshots(self.library_name)
 
 
     def stats(self):
@@ -411,13 +411,13 @@ class GenericVersionStore(object):
         -------
         dictionary of storage stats
         """
-        pass
+        raise NotImplementedError()
 
     def _fsck(self, dry_run):
         """
         Run a consistency check on this VersionStore library.
         """
-        pass
+        raise NotImplementedError()
 
     def _cleanup_orphaned_chunks(self, dry_run):
         """
@@ -425,7 +425,7 @@ class GenericVersionStore(object):
         Removes the broken parent pointer and, if there are no other parent pointers for the chunk,
         removes the chunk.
         """
-        pass
+        raise NotImplementedError()
 
     def _cleanup_orphaned_versions(self, dry_run):
         """
@@ -433,4 +433,4 @@ class GenericVersionStore(object):
         Note, doesn't delete the versions, just removes the parent pointer if it no longer
         exists in snapshots.
         """
-        pass
+        raise NotImplementedError()
